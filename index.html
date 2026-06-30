@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HR Dashboard - 组织数据看板</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f6f8;color:#1f2329}
+.app{max-width:1200px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin-bottom:4px}
+.subtitle{color:#8f959e;font-size:13px;margin-bottom:20px}
+.card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:16px}
+.card h3{font-size:15px;margin-bottom:12px}
+.dropzone{border:2px dashed #dee0e5;border-radius:10px;padding:40px;text-align:center;cursor:pointer;transition:all .2s}
+.dropzone:hover,.dropzone.drag{border-color:#3370ff;background:#f0f4ff}
+.dropzone .icon{font-size:40px;margin-bottom:8px}
+.dropzone .t{font-size:15px;font-weight:600}
+.dropzone .s{font-size:12px;color:#8f959e;margin-top:4px}
+textarea{width:100%;height:100px;border:1px solid #dee0e5;border-radius:8px;padding:10px;font-size:13px;font-family:monospace;resize:vertical}
+.btn{display:inline-block;padding:8px 20px;border-radius:8px;font-size:14px;font-weight:600;border:none;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:#3370ff;color:#fff}
+.btn-danger{background:#ff3b30;color:#fff;padding:12px 28px;font-size:15px}
+.btn-sm{padding:5px 14px;font-size:12px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tag{padding:3px 10px;background:#eef1ff;color:#3370ff;border-radius:6px;font-size:11px;font-weight:500}
+table{width:100%;font-size:12px;border-collapse:collapse}
+thead th{background:#f9fafb;padding:7px 10px;text-align:left;font-weight:600;color:#646a73;border-bottom:1px solid #dee0e5;white-space:nowrap}
+tbody td{padding:7px 10px;border-bottom:1px solid #f2f3f5;white-space:nowrap}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.kpi .l{font-size:11px;color:#8f959e}
+.kpi .v{font-size:26px;font-weight:700;margin-top:2px}
+.kpi .u{font-size:13px;color:#8f959e;margin-left:3px;font-weight:400}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:768px){.charts{grid-template-columns:1fr}}
+.chart-box{background:#fff;border-radius:10px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.chart-box h4{font-size:14px;margin-bottom:8px}
+.flex{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.mt{margin-top:12px}.mb{margin-bottom:12px}
+#step-import,#step-dashboard{display:none}
+#step-import.active,#step-dashboard.active{display:block}
+#report-table{max-height:200px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="app">
+<div id="step-import" class="active">
+<h1>📊 组织数据看板</h1>
+<p class="subtitle">HR组织数据分析 · 自动清洗 · 智能看板 · 数据不上传服务器</p>
+<div class="card">
+<div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+<div class="icon">📁</div>
+<div class="t">拖拽 Excel / CSV 文件到此处</div>
+<div class="s">或点击选择 · 支持 .xlsx .xls .csv</div>
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFile(this.files[0])">
+</div></div>
+<div class="card">
+<h3>📋 粘贴表格数据</h3>
+<p style="color:#8f959e;font-size:12px;margin-bottom:8px">从 Excel / 飞书表格复制数据，粘贴到下方</p>
+<textarea id="pasteArea" placeholder="姓名&#9;部门&#9;岗位&#9;入职日期&#10;张三&#9;技术部&#9;工程师&#9;2023-01-15"></textarea>
+<button class="btn btn-primary mt" onclick="handlePaste()">解析数据</button>
+</div>
+<div id="previewBox" style="display:none"><div class="card">
+<div class="flex mb"><div><strong id="rowCount"></strong></div><button class="btn btn-primary btn-sm" onclick="runAnalysis()">开始分析 →</button></div>
+<div class="tags" id="fieldTags"></div>
+<div style="overflow-x:auto"><table><thead id="previewHead"></thead><tbody id="previewBody"></tbody></table></div>
+</div></div>
+</div>
+<div id="step-dashboard">
+<div class="flex mb"><span style="color:#3370ff;font-size:13px;cursor:pointer;font-weight:500" onclick="goBack()">← 重新导入</span><span style="color:#8f959e;font-size:12px" id="validCount"></span></div>
+<div class="kpis" id="kpis"></div>
+<div class="charts" id="charts"></div>
+<div class="card"><h3>🧹 数据清洗报告</h3><div id="report-table"></div></div>
+</div>
+</div>
+<script>
+let rawData=[],headers=[],fieldMap={},cleanedData=[],analysis=null;
+function handleFile(f){if(!f)return;let r=new FileReader();r.onload=function(e){let w=XLSX.read(new Uint8Array(e.target.result),{type:'array'});let s=w.Sheets[w.SheetNames[0]];let j=XLSX.utils.sheet_to_json(s,{defval:''});if(j.length)parseData(j)};r.readAsArrayBuffer(f)}
+function handlePaste(){let t=document.getElementById('pasteArea').value.trim();if(!t)return;let l=t.split('\n');let h=l[0].split('\t').map(h=>h.trim());let r=l.slice(1).map(l=>{let v=l.split('\t');let o={};h.forEach((h,i)=>o[h]=(v[i]||'').trim());return o});parseData(r)}
+const P={name:[/姓名$/,/^姓名/,/名字/,/^name$/i,/员工/],department:[/部门$/,/^部门/,/组织/,/^dept/i],position:[/岗位$/,/职位/,/职务/,/^position$/i,/title/i],level:[/职级/,/级别/,/等级/,/^level$/i,/grade/i],hireDate:[/入职/,/到岗/,/^hire/i,/join/i],leaveDate:[/离职/,/离开/,/^leave/i,/termination/i],birthDate:[/出生/,/生日/,/^birth/i],gender:[/性别/,/^sex$/i,/^gender$/i],education:[/学历/,/学位/,/教育/,/^edu/i],tenure:[/司龄/,/工龄/,/年限/],salary:[/薪资/,/薪酬/,/工资/,/年薪/,/月薪/,/^salary$/i],performance:[/绩效/,/考核/,/评分/,/^perf/i,/rating/i],status:[/状态/,/在职/,/^status$/i],manager:[/上级/,/汇报/,/经理/,/主管/,/^manager$/i],location:[/地点/,/城市/,/办公/,/^location$/i],type:[/类型/,/用工/,/合同/,/^type$/i]};
+function matchFields(h){let m={};h.forEach(h=>{for(let[c,p]of Object.entries(P)){for(let r of p){if(r.test(h)){m[c]=h;break}}}});return m}
+function parseData(j){rawData=j;headers=Object.keys(j[0]);fieldMap=matchFields(headers);document.getElementById('rowCount').textContent='已解析 '+j.length+' 条记录 · '+headers.length+' 个字段';let L={name:'姓名',department:'部门',position:'岗位',level:'职级',hireDate:'入职日期',leaveDate:'离职日期',birthDate:'出生日期',gender:'性别',education:'学历',tenure:'司龄',salary:'薪资',performance:'绩效',status:'状态',manager:'上级',location:'地点',type:'类型'};document.getElementById('fieldTags').innerHTML=Object.entries(fieldMap).map(([k,v])=>`<span class="tag">${L[k]||k}: ${v}</span>`).join('');document.getElementById('previewHead').innerHTML='<tr>'+headers.slice(0,8).map(h=>`<th>${h}</th>`).join('')+'</tr>';document.getElementById('previewBody').innerHTML=j.slice(0,5).map(r=>'<tr>'+headers.slice(0,8).map(h=>`<td>${r[h]||''}</td>`).join('')+'</tr>').join('');document.getElementById('previewBox').style.display='block'}
+function parseDate(v){if(v instanceof Date)return v;if(typeof v==='number'&&v>30000&&v<80000)return new Date((v-25569)*86400*1000);if(typeof v!=='string')return null;let m=v.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/)||v.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);if(m){let d=new Date(+m[1],+m[2]-1,+m[3]);return isNaN(d.getTime())?null:d}return null}
+function parseNum(v){if(typeof v==='number')return v;if(typeof v!=='string')return null;let n=Number(v.replace(/[,，￥$%\s]/g,''));return isNaN(n)?null:n}
+function cleanData(d){let issues=[],cols=[];let h=Object.keys(d[0]);h.forEach(c=>{let vs=d.map(r=>r[c]).filter(v=>v!=null&&v!=='');let dates=0,nums=0;vs.slice(0,50).forEach(v=>{if(parseDate(v))dates++;else if(parseNum(v)!==null)nums++});cols.push({name:c,type:dates>vs.length*.4?'date':nums>vs.length*.4?'number':'string',nulls:d.length-vs.length})});let cl=d.map((r,i)=>{let o={};Object.entries(r).forEach(([k,v])=>{let c=cols.find(c=>c.name===k);if(c&&c.type==='date'){let dt=parseDate(v);if(dt)o[k]=dt.toISOString().split('T')[0];else{o[k]=v||null;if(v)issues.push({row:i+1,col:k,orig:v,action:'无法解析日期'})}}else if(c&&c.type==='number'){let n=parseNum(v);if(n!==null)o[k]=n;else{o[k]=null;if(v!=null&&v!=='')issues.push({row:i+1,col:k,orig:v,action:'非数值'})}}else{o[k]=typeof v==='string'?v.trim():v}});return o});return{data:cl,report:{total:d.length,columns:cols,issues:issues}}}
+const Z=[['♑ 摩羯座',1,1,1,19],['♒ 水瓶座',1,20,2,18],['♓ 双鱼座',2,19,3,20],['♈ 白羊座',3,21,4,19],['♉ 金牛座',4,20,5,20],['♊ 双子座',5,21,6,21],['♋ 巨蟹座',6,22,7,22],['♌ 狮子座',7,23,8,22],['♍ 处女座',8,23,9,22],['♎ 天秤座',9,23,10,23],['♏ 天蝎座',10,24,11,22],['♐ 射手座',11,23,12,21],['♑ 摩羯座',12,22,12,31]];
+function getZodiac(d){if(!d)return null;let dt=new Date(d);if(isNaN(dt.getTime()))return null;let m=dt.getMonth()+1,day=dt.getDate();return Z.find(z=>(m===z[1]&&day>=z[2])||(m===z[3]&&day<=z[4]))?.[0]||null}
+function countGroup(d,f,fn){let m={};d.forEach(r=>{let k=fn?fn(r[f]):(r[f]||'未知');if(k)m[k]=(m[k]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([n,v])=>({name:n,value:v}))}
+function countByMonth(d,f){let m={};d.forEach(r=>{let v=r[f];if(!v)return;let dt=new Date(v);if(isNaN(dt.getTime()))return;let k=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');m[k]=(m[k]||0)+1});return Object.entries(m).sort(([a],[b])=>a.localeCompare(b)).map(([n,v])=>({name:n,value:v}))}
+function calcTenure(h,l){if(!h)return-1;let hire=new Date(h),leave=l?new Date(l):new Date();if(isNaN(hire)||isNaN(leave))return-1;return(leave-hire)/(365.25*86400*1000)}
+function calcAge(b){if(!b)return-1;let birth=new Date(b);if(isNaN(birth))return-1;let now=new Date();let age=now.getFullYear()-birth.getFullYear();if(now.getMonth()<birth.getMonth()||(now.getMonth()===birth.getMonth()&&now.getDate()<birth.getDate()))age--;return age}
+function avg(a){return a.length?Math.round(a.reduce((s,v)=>s+v,0)/a.length*10)/10:0}
+function runAnalysis(){if(!rawData.length)return;let r=cleanData(rawData);cleanedData=r.data;let f=k=>fieldMap[k]||k;let d=cleanedData;let total=d.length;let depts=new Set(d.map(r=>r[f('department')]).filter(Boolean));let tens=d.map(r=>calcTenure(r[f('hireDate')],r[f('leaveDate')])).filter(t=>t>=0);let ages=d.map(r=>calcAge(r[f('birthDate')])).filter(a=>a>0);let leaves=d.filter(r=>r[f('leaveDate')]);let turnover=total>0?Math.round((leaves.length/total)*1000)/10:0;let male=0,female=0;d.forEach(r=>{let v=String(r[f('gender')]||'');if(/^男|^m/i.test(v))male++;else if(/^女|^f/i.test(v))female++});analysis={kpis:[{l:'员工总数',v:total,u:'人',c:'#3370ff'},{l:'部门数',v:depts.size,u:'个',c:'#646a73'},{l:'平均司龄',v:avg(tens),u:'年',c:'#34c759'},{l:'流失率',v:turnover,u:'%',c:'#ff3b30'},{l:'平均年龄',v:avg(ages),u:'岁',c:'#646a73'},{l:'男性',v:male,u:'人',c:'#3370ff'},{l:'女性',v:female,u:'人',c:'#ff5e8a'},{l:'总记录',v:r.report.total,u:'条',c:'#ff9500'}],charts:[{t:'部门人员分布',o:barOpt(countGroup(d,f('department')).slice(0,10),'#3370ff')},{t:'学历构成',o:pieOpt(countGroup(d,f('education')))},{t:'年龄分布',o:barOpt(ageGroups(ages),'#34c759')},{t:'司龄分布',o:barOpt(tenureGroups(tens),'#ff9500')},{t:'月度入职趋势',o:lineOpt(countByMonth(d,f('hireDate')),'#3370ff')},{t:'月度离职趋势',o:lineOpt(countByMonth(d,f('leaveDate')),'#ff3b30')},{t:'星座分布',o:barOpt(zodiacDist(d,f('birthDate')),'#af52de')},{t:'职级分布',o:barOpt(countGroup(d,f('level')),'#646a73')},{t:'性别比例',o:pieOpt([{name:'男性',value:male},{name:'女性',value:female}])},...(leaves.length>0?[{t:'离职类型',o:pieOpt(countGroup(leaves,f('type')))}]:[])],report:r.report};renderDashboard()}
+function ageGroups(a){let g={'<25岁':0,'25-30岁':0,'30-35岁':0,'35-40岁':0,'40-45岁':0,'45岁+':0};a.forEach(v=>{if(v<25)g['<25岁']++;else if(v<30)g['25-30岁']++;else if(v<35)g['30-35岁']++;else if(v<40)g['35-40岁']++;else if(v<45)g['40-45岁']++;else g['45岁+']++});return Object.entries(g).map(([n,v])=>({name:n,value:v}))}
+function tenureGroups(t){let g={'<1年':0,'1-3年':0,'3-5年':0,'5-10年':0,'10年+':0};t.forEach(v=>{if(v<1)g['<1年']++;else if(v<3)g['1-3年']++;else if(v<5)g['3-5年']++;else if(v<10)g['5-10年']++;else g['10年+']++});return Object.entries(g).map(([n,v])=>({name:n,value:v}))}
+function zodiacDist(d,f){let m={};d.forEach(r=>{let z=getZodiac(r[f]);if(z)m[z]=(m[z]||0)+1});let o=['♑ 摩羯座','♒ 水瓶座','♓ 双鱼座','♈ 白羊座','♉ 金牛座','♊ 双子座','♋ 巨蟹座','♌ 狮子座','♍ 处女座','♎ 天秤座','♏ 天蝎座','♐ 射手座'];return o.filter(k=>m[k]).map(k=>({name:k,value:m[k]}))}
+function renderDashboard(){document.getElementById('step-import').classList.remove('active');document.getElementById('step-dashboard').classList.add('active');document.getElementById('validCount').textContent='清洗完成 · '+cleanedData.length+' 条有效数据';document.getElementById('kpis').innerHTML=analysis.kpis.map(k=>`<div class="kpi"><div class="l">${k.l}</div><div class="v" style="color:${k.c}">${typeof k.v==='number'?k.v.toLocaleString():k.v}<span class="u">${k.u}</span></div></div>`).join('');document.getElementById('charts').innerHTML=analysis.charts.map((c,i)=>`<div class="chart-box"><h4>${c.t}</h4><div id="chart-${i}" style="height:260px"></div></div>`).join('');setTimeout(()=>{analysis.charts.forEach((c,i)=>{let dom=document.getElementById('chart-'+i);if(dom)echarts.init(dom).setOption(c.o)})},150);let r=analysis.report;document.getElementById('report-table').innerHTML=`<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px"><div><small style="color:#8f959e">总行数</small><p style="font-weight:600;font-size:18px">${r.total}</p></div><div><small style="color:#8f959e">字段数</small><p style="font-weight:600;font-size:18px">${r.columns.length}</p></div><div><small style="color:#8f959e">问题数</small><p style="font-weight:600;font-size:18px;color:#ff3b30">${r.issues.length}</p></div></div>${r.issues.length?'<table><thead><tr><th>行</th><th>列</th><th>原值</th><th>处理</th></tr></thead><tbody>'+r.issues.slice(0,20).map(i=>`<tr><td>${i.row}</td><td>${i.col}</td><td>${i.orig}</td><td style="color:#ff9500">${i.action}</td></tr>`).join('')+'</tbody></table>':''}`}
+function goBack(){document.getElementById('step-dashboard').classList.remove('active');document.getElementById('step-import').classList.add('active')}
+function barOpt(d,c){return{tooltip:{trigger:'axis'},grid:{left:10,right:20,top:10,bottom:30,containLabel:true},xAxis:{type:'category',data:d.map(d=>d.name),axisLabel:{fontSize:10,rotate:d.length>6?35:0}},yAxis:{type:'value',axisLabel:{fontSize:10}},series:[{type:'bar',data:d.map(d=>d.value),itemStyle:{color:c,borderRadius:[4,4,0,0]},barMaxWidth:40}]}}
+function pieOpt(d){let cl=['#3370ff','#34c759','#ff9500','#ff3b30','#af52de','#ff5e8a','#5ac8fa','#ffd60a'];return{tooltip:{trigger:'item'},legend:{bottom:0,textStyle:{fontSize:10}},series:[{type:'pie',radius:['40%','70%'],center:['50%','45%'],data:d.map((d,i)=>({...d,itemStyle:{color:cl[i%cl.length]}})),label:{fontSize:10}}]}}
+function lineOpt(d,c){return{tooltip:{trigger:'axis'},grid:{left:10,right:20,top:10,bottom:30,containLabel:true},xAxis:{type:'category',data:d.map(d=>d.name),axisLabel:{fontSize:10,rotate:d.length>8?45:0}},yAxis:{type:'value',axisLabel:{fontSize:10}},series:[{type:'line',data:d.map(d=>d.value),itemStyle:{color:c},lineStyle:{color:c,width:2},areaStyle:{color:c+'20'},smooth:true}]}}
+let dz=document.getElementById('dropzone');dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');handleFile(e.dataTransfer.files[0])});
+</script>
+</body>
+</html>
